@@ -418,7 +418,7 @@ add: proxyAddresses
 proxyAddresses: =EX:/o=%(firstorg)s/ou=First Administrative Group/cn=Recipients/cn=%(username)s
 proxyAddresses: smtp:postmaster@%(dnsdomain)s
 proxyAddresses: X400:c=US;a= ;p=First Organizati;o=Exchange;s=%(username)s
-proxyAddresses: SMTP:%(username)s@%(dnsdomain)s
+proxyAddresses: SMTP:%(upn)s
 replace: msExchUserAccountControl
 msExchUserAccountControl: 0
 """
@@ -427,7 +427,8 @@ msExchUserAccountControl: 0
                                       "netbiosname": names.netbiosname,
                                       "firstorg": names.firstorg,
                                       "domaindn": names.domaindn,
-                                      "dnsdomain": names.dnsdomain}
+                                      "dnsdomain": names.dnsdomain,
+                                      "upn": user_attrs["userPrincipalName"]}
         db.modify_ldif(ldif_value)
 
         res = db.search(base=user_dn, scope=SCOPE_BASE, attrs=["*"])
@@ -443,7 +444,7 @@ msExchUserAccountControl: 0
             db.modify_ldif(extended_user)
 
         if "mail" not in record_keys:
-            extended_user = "dn: %s\nadd: mail\nmail: %s@%s\n" % (user_dn, username, names.dnsdomain)
+            extended_user = "dn: %s\nadd: mail\nmail: %s\n" % (user_dn, user_attrs["userPrincipalName"])
             db.modify_ldif(extended_user)
 
         print "[+] User %s extended and enabled" % username
