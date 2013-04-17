@@ -370,16 +370,24 @@ def get_ldb_url(lp, creds, names):
     return url
 
 def get_user_dn(ldb, basedn, username):
+    user_dn = None
+    attrs = get_user_attrs(ldb, basedn, username)
+    if attrs:
+      user_dn = attrs.dn.get_linearized()
+
+    return user_dn
+
+def get_user_attrs(ldb, basedn, username):
     if not isinstance(ldb, Ldb):
         raise TypeError("'ldb' argument must be an Ldb intance")
 
     ldb_filter = "(&(objectClass=user)(sAMAccountName=%s))" % username
     res = ldb.search(base=basedn, scope=SCOPE_SUBTREE, expression=ldb_filter, attrs=["*"])
-    user_dn = None
+    user_attrs = None
     if len(res) == 1:
-        user_dn = res[0].dn.get_linearized()
+        user_attrs = res[0]
 
-    return user_dn
+    return user_attrs
 
 def newuser(lp, creds, username=None):
     """extend user record with OpenChange settings.
@@ -392,8 +400,9 @@ def newuser(lp, creds, username=None):
     names = guess_names_from_smbconf(lp, None, None)
     db = Ldb(url=get_ldb_url(lp, creds, names), session_info=system_session(), 
              credentials=creds, lp=lp)
-    user_dn = get_user_dn(db, "CN=Users,%s" % names.domaindn, username)
-    if user_dn:
+    user_attrs = get_user_attrs(db, names.domaindn, username)
+    if user_attrs:
+        user_dn=user_attrs.dn.get_linearized()
         extended_user = """
 dn: %(user_dn)s
 changetype: modify
@@ -454,7 +463,7 @@ def accountcontrol(lp, creds, username=None, value=0):
     names = guess_names_from_smbconf(lp, None, None)
     db = Ldb(url=get_ldb_url(lp, creds, names), session_info=system_session(), 
              credentials=creds, lp=lp)
-    user_dn = get_user_dn(db, "CN=Users,%s" % names.domaindn, username)
+    user_dn = get_user_dn(db, names.domaindn, username)
     extended_user = """
 dn: %s
 changetype: modify
