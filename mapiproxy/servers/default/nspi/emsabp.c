@@ -1286,6 +1286,8 @@ _PUBLIC_ enum MAPISTATUS emsabp_ab_container_enum(TALLOC_CTX *mem_ctx,
 	char				*expression;
 	const char * const		recipient_attrs[] = { "*", NULL };
 	struct ldb_server_sort_control	**ldb_sort_controls;
+        struct ldb_dn                   *user_dn;
+        struct ldb_dn                   *parent_dn;
 
 	/* Fetch AB container record */
 	retval = emsabp_ab_container_by_id(mem_ctx, emsabp_ctx, ContainerID, &ldb_msg_ab);
@@ -1298,15 +1300,63 @@ _PUBLIC_ enum MAPISTATUS emsabp_ab_container_enum(TALLOC_CTX *mem_ctx,
 	}
 	OPENCHANGE_RETVAL_IF(!purportedSearch, MAPI_E_INVALID_BOOKMARK, NULL);
 
-	/* Search AD with purportedSearch filter */
+	/* Search AD with purportedSearch filter and the correct base DN. We start
+           by getting the correct base DN based on who is actually connected */
+	ldb_res = talloc_zero(mem_ctx, struct ldb_result);
+	if (!ldb_res) {
+		*ldb_resp = NULL;
+		return MAPI_E_NOT_FOUND;
+	}
+        
+        expression = talloc_asprintf(mem_ctx, "(sAMAccountName=%s)", emsabp_ctx->account_name);
+        
+	if (!expression) {
+		talloc_free(ldb_res);
+		return MAPI_E_NOT_FOUND;
+	}
+        
+        ldb_req = NULL;
+	ldb_ret = ldb_build_search_req(&ldb_req, emsabp_ctx->samdb_ctx, mem_ctx,
+				       ldb_get_default_basedn(emsabp_ctx->samdb_ctx),
+				       LDB_SCOPE_SUBTREE,
+				       expression,
+				       recipient_attrs,
+				       NULL,
+				       ldb_res,
+				       ldb_search_default_callback,
+				       NULL);
+	if (ldb_ret != LDB_SUCCESS) goto done;
+        
+	ldb_sort_controls = talloc_array(expression, struct ldb_server_sort_control *, 2);
+	ldb_sort_controls[0] = talloc(ldb_sort_controls, struct ldb_server_sort_control);
+	ldb_sort_controls[0]->attributeName = talloc_strdup(ldb_sort_controls, "dn");
+	ldb_sort_controls[0]->orderingRule = NULL;
+	ldb_sort_controls[0]->reverse = 0;
+	ldb_sort_controls[1] = NULL;
+	ldb_request_add_control(ldb_req, LDB_CONTROL_SERVER_SORT_OID, false, ldb_sort_controls);
 
+	ldb_ret = ldb_request(emsabp_ctx->samdb_ctx, ldb_req);
+		
+	if (ldb_ret == LDB_SUCCESS) {
+		ldb_ret = ldb_wait(ldb_req->handle, LDB_WAIT_ALL);
+	}
+
+        /* It's certain the response exists here, because the user is already logged on */
+        user_dn = ldb_res->msgs[0]->dn;
+        parent_dn = ldb_dn_get_parent(mem_ctx, user_dn);
+	talloc_free(expression);
+        talloc_free(ldb_req);
+        talloc_free(ldb_res);
+        
+        /* We now search AD with the correct base DN using the purportedSearch */
 	ldb_res = talloc_zero(mem_ctx, struct ldb_result);
 	if (!ldb_res) {
 		*ldb_resp = NULL;
 		return MAPI_E_NOT_FOUND;
 	}
 
-	expression = talloc_asprintf(mem_ctx, "%s", purportedSearch);
+        expression = talloc_asprintf(mem_ctx, "%s", purportedSearch);
+
 	if (!expression) {
 		talloc_free(ldb_res);
 		return MAPI_E_NOT_FOUND;
@@ -1314,7 +1364,7 @@ _PUBLIC_ enum MAPISTATUS emsabp_ab_container_enum(TALLOC_CTX *mem_ctx,
 
 	ldb_req = NULL;
 	ldb_ret = ldb_build_search_req(&ldb_req, emsabp_ctx->samdb_ctx, mem_ctx,
-				       ldb_get_default_basedn(emsabp_ctx->samdb_ctx),
+				       parent_dn,
 				       LDB_SCOPE_SUBTREE,
 				       expression,
 				       recipient_attrs,
