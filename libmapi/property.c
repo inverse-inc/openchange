@@ -669,25 +669,36 @@ _PUBLIC_ void mapi_copy_spropvalues(TALLOC_CTX *mem_ctx, struct SPropValue *sour
 		*dest_value = *source_value;
 
 		prop_type = (source_value->ulPropTag & 0xFFFF);
-		if ((prop_type & MV_FLAG)) {
-			DEBUG(5, ("multivalues not handled\n"));
-			abort();
-		}
-		else {
-			switch(prop_type) {
-			case PT_STRING8:
-				dest_value->value.lpszA = talloc_strdup(mem_ctx, source_value->value.lpszA);
-				break;
-			case PT_UNICODE:
-				dest_value->value.lpszW = talloc_strdup(mem_ctx, source_value->value.lpszW);
-				break;
-			case PT_BINARY:
-				dest_value->value.bin.cb = source_value->value.bin.cb;
-				dest_value->value.bin.lpb = talloc_memdup(mem_ctx, source_value->value.bin.lpb, sizeof(uint8_t) * source_value->value.bin.cb);
-				break;
-			default:
-				*dest_value = *source_value;
+		switch(prop_type) {
+		case PT_STRING8:
+			dest_value->value.lpszA = talloc_strdup(mem_ctx, source_value->value.lpszA);
+			break;
+		case PT_UNICODE:
+			dest_value->value.lpszW = talloc_strdup(mem_ctx, source_value->value.lpszW);
+			break;
+		case PT_BINARY:
+			dest_value->value.bin.cb = source_value->value.bin.cb;
+			dest_value->value.bin.lpb = talloc_memdup(mem_ctx, source_value->value.bin.lpb, sizeof(uint8_t) * source_value->value.bin.cb);
+			break;
+		case PT_MV_BINARY:
+		{
+			uint32_t        i;
+			uint32_t        size = 0;
+			
+			dest_value->value.MVbin.cValues = source_value->value.MVbin.cValues;
+			size += 4;
+			
+			dest_value->value.MVbin.lpbin = talloc_array(mem_ctx, struct Binary_r, 
+								   dest_value->value.MVbin.cValues);
+			for (i = 0; i < dest_value->value.MVbin.cValues; i++) {
+				dest_value->value.MVbin.lpbin[i].cb = source_value->value.MVbin.lpbin[i].cb;
+				dest_value->value.MVbin.lpbin[i].lpb = source_value->value.MVbin.lpbin[i].lpb;
+				size += dest_value->value.MVbin.lpbin[i].cb + sizeof (uint16_t);
 			}
+		}
+		break;
+		default:
+			*dest_value = *source_value;
 		}
 	}
 }
